@@ -8,6 +8,40 @@ module RRStrace
     include("generated/alltheioctls.jl")
     using Cxx
 
+    signal_names = [
+        "HUP", "INT", "QUIT", "ILL", "TRAP", "ABRT", "BUS", "FPE",
+        "KILL", "USR1", "SEGV", "USR2", "PIPE", "ALRM", "TERM", "STKFLT",
+        "CHLD", "CONT", "STOP", "TSTP", "TTIN", "TTOU", "URG", "XCPU", "XFSZ",
+        "VTALRM", "PROF", "WINCH", "POLL", "IO", "PWR", "SYS"
+    ]
+
+    function apply_property!(task, property, arguments)
+        if isa(property, CstringArgument)
+            data = NativeDebugger.fallible_load(task, RemotePtr{UInt8}(arguments[property.which]), 40)
+            idx = findfirst(data, 0); more = false;
+            if idx == 0
+                more = true
+            else
+                data = data[1:idx-1]
+            end
+            arguments[property.which] = string(repr(String(data)),more ? "..." : "")
+        elseif isa(property, CustomTransform)
+            arguments[property.which] = property.F(arguments[property.which])
+        elseif isa(property, FDArgument)
+            arguments[property.which] = sprint((args...)->print_with_color(:yellow,args...), string(arguments[property.which]))
+        elseif isa(property, SigmaskPtrArgument) && arguments[property.which] != 0
+            mask = NativeDebugger.load(task, RemotePtr{UInt64}(arguments[property.which]))
+            sigs = signal_names[filter(x->((1<<(x-1))&mask != 0),1:length(signal_names))]
+            arguments[property.which] =
+                string("[",join(map(s->string("SIG",s),sigs), " "),"]")
+        elseif isa(property, BufferArgument)
+            more = arguments[property.whichLength] > 40
+            size = min(arguments[property.whichLength], 40)
+            data = NativeDebugger.fallible_load(task, RemotePtr{UInt8}(arguments[property.whichData]), size)
+            arguments[property.whichData] = string(repr(String(data)),more ? "..." : "")
+        end
+    end
+
     function print_syscall_arguments(io, task, ev)
         arch, num = icxx"$ev.arch();", icxx"$ev.Syscall().number;"
         syscall = syscall_table[arch][num]
@@ -38,25 +72,7 @@ module RRStrace
                 return
             end
             for property in syscall[5]
-                if isa(property, CstringArgument)
-                    data = NativeDebugger.fallible_load(task, RemotePtr{UInt8}(arguments[property.which]), 40)
-                    idx = findfirst(data, 0); more = false;
-                    if idx == 0
-                        more = true
-                    else
-                        data = data[1:idx-1]
-                    end
-                    arguments[property.which] = string(repr(String(data)),more ? "..." : "")
-                elseif isa(property, CustomTransform)
-                    arguments[property.which] = property.F(arguments[property.which])
-                elseif isa(property, FDArgument)
-                    arguments[property.which] = sprint((args...)->print_with_color(:yellow,args...), string(arguments[property.which]))
-                elseif isa(property, BufferArgument)
-                    more = arguments[property.whichLength] > 40
-                    size = min(arguments[property.whichLength], 40)
-                    data = NativeDebugger.fallible_load(task, RemotePtr{UInt8}(arguments[property.whichData]), size)
-                    arguments[property.whichData] = string(repr(String(data)),more ? "..." : "")
-                end
+                apply_property!(task, property, arguments)
             end
             print(io, "(", join(arguments, ", "),")")
         end
