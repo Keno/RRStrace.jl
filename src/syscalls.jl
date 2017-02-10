@@ -236,7 +236,7 @@ const syscalls = [
   (:getresgid, 171, 120, -1, Any[]),
   (:prctl, 172, 157, 5, Any[]),
   (:rt_sigreturn, 173, 15, -1, Any[]),
-  (:rt_sigaction, 174, 13, 4),
+  (:rt_sigaction, 174, 13, 4, Any[]),
   (:rt_sigprocmask, 175, 14, 4, Any[SigmaskPtrArgument(2),SigmaskPtrArgument(3)]),
   (:rt_sigpending, 176, 127, -1, Any[]),
   (:rt_sigtimedwait, 177, 128, -1, Any[]),
